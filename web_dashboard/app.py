@@ -1,12 +1,11 @@
 from flask import Flask, jsonify, render_template
 from flask_cors import CORS
-import asyncio
-import threading
+from waitress import serve
 
 app = Flask(__name__, template_folder=".")
 CORS(app)
 
-# These will be set from main.py after detector and mm are created
+# These will be set from main.py
 detector = None
 market_maker = None
 
@@ -38,6 +37,10 @@ def api_mm_status():
         return jsonify({"status": "active", "tokens": list(market_maker.tokens.keys())})
     return jsonify({"status": "inactive"})
 
+# ✅ Health check endpoint (Railway requires this)
+@app.route("/health")
+def health():
+    return "OK", 200
+
 def start_flask(host="0.0.0.0", port=5000):
-    # Use waitress for production; for development, Flask's built-in works
-    app.run(host=host, port=port, debug=False, use_reloader=False)
+    serve(app, host=host, port=port)

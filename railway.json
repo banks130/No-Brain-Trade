@@ -6,8 +6,8 @@
   },
   "deploy": {
     "startCommand": "python main.py",
-    "healthcheckPath": "/api/tokens",
-    "healthcheckTimeout": 240,
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 300,
     "restartPolicyType": "ALWAYS",
     "numReplicas": 1
   }

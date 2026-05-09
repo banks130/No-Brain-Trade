@@ -1,11 +1,11 @@
 from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 from waitress import serve
+import os
 
 app = Flask(__name__, template_folder=".")
 CORS(app)
 
-# These will be set from main.py
 detector = None
 market_maker = None
 
@@ -19,15 +19,10 @@ def api_tokens():
         return jsonify([])
     spiked = detector.get_spiked_tokens()
     return jsonify([{
-        "mint": t.mint,
-        "name": t.name,
-        "symbol": t.symbol,
-        "mcap": t.current_mcap,
-        "spike_pct": t.spike_pct,
-        "peak_mcap": t.peak_mcap,
-        "wallets": t.unique_wallet_count,
-        "buy_ratio": t.buy_ratio,
-        "net_sol": t.net_sol_flow,
+        "mint": t.mint, "name": t.name, "symbol": t.symbol,
+        "mcap": t.current_mcap, "spike_pct": t.spike_pct,
+        "peak_mcap": t.peak_mcap, "wallets": t.unique_wallet_count,
+        "buy_ratio": t.buy_ratio, "net_sol": t.net_sol_flow,
         "age": t.age_seconds,
     } for t in spiked])
 
@@ -37,10 +32,11 @@ def api_mm_status():
         return jsonify({"status": "active", "tokens": list(market_maker.tokens.keys())})
     return jsonify({"status": "inactive"})
 
-# ✅ Health check endpoint (Railway requires this)
 @app.route("/health")
 def health():
     return "OK", 200
 
-def start_flask(host="0.0.0.0", port=5000):
+def start_flask(host="0.0.0.0", port=None):
+    if port is None:
+        port = int(os.environ.get("PORT", 5000))
     serve(app, host=host, port=port)

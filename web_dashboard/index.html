@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🧠 No Brain Trade – ≥150% Spike Terminal</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: #0a0a0a;
+      color: #00ff88;
+      font-family: 'Courier New', monospace;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    h1 {
+      color: #ff0095;
+      margin-bottom: 10px;
+      text-shadow: 0 0 8px #ff0095;
+    }
+    .stats {
+      display: flex;
+      gap: 30px;
+      margin-bottom: 20px;
+      color: #aaa;
+      flex-wrap: wrap;
+    }
+    .table-wrapper {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid #333;
+    }
+    th, td {
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid #222;
+    }
+    th {
+      background: #1a1a1a;
+      color: #0ff;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    tr:hover td {
+      background: #111;
+    }
+    .spike-value {
+      font-weight: bold;
+      color: #ff4444;
+    }
+    .spike-value.huge {
+      color: #ff0;
+    }
+    .mcap {
+      color: #0f0;
+    }
+    .wallet {
+      color: #fff;
+    }
+    .buy-ratio {
+      color: #0ff;
+    }
+    .net-flow {
+      color: #ff8800;
+    }
+    .age {
+      color: #888;
+    }
+    .link {
+      color: #88f;
+      text-decoration: none;
+    }
+    .link:hover {
+      text-decoration: underline;
+    }
+    .footer {
+      margin-top: 30px;
+      color: #444;
+      font-size: 12px;
+    }
+    .status {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .status.connected {
+      background: #0f0;
+      box-shadow: 0 0 8px #0f0;
+    }
+    .status.disconnected {
+      background: #f00;
+      box-shadow: 0 0 8px #f00;
+    }
+    #mm-section {
+      margin-top: 30px;
+    }
+    #alert-log {
+      max-height: 300px;
+      overflow-y: auto;
+      background: #111;
+      padding: 10px;
+      border-radius: 6px;
+      margin-top: 20px;
+      font-size: 13px;
+      color: #aaa;
+    }
+    #alert-log li {
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🧠 No Brain Trade – ≥150% Spike Detector</h1>
+  <div class="stats">
+    <div>Connection: <span class="status disconnected" id="status-dot"></span> <span id="status-text">Disconnected</span></div>
+    <div>Active tokens tracked: <span id="active-count">0</span></div>
+    <div>Spiked (≥150%): <span id="spiked-count">0</span></div>
+  </div>
+
+  <div class="table-wrapper">
+    <table id="spike-table">
+      <thead>
+        <tr>
+          <th>Token</th>
+          <th>Symbol</th>
+          <th>MCap (SOL)</th>
+          <th>Spike %</th>
+          <th>Peak MCap</th>
+          <th>Wallets</th>
+          <th>Buy Ratio</th>
+          <th>Net SOL</th>
+          <th>Age</th>
+          <th>Link</th>
+        </tr>
+      </thead>
+      <tbody id="table-body">
+        <tr><td colspan="10" style="text-align:center; color:#555;">Waiting for tokens...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div id="alert-log">
+    <h3 style="color:#0ff;">Spike Alerts (Last 50)</h3>
+    <ul id="log-list" style="list-style:none;padding:0;"></ul>
+  </div>
+
+  <div id="mm-section">
+    <h2 style="color:#0ff;">Market Maker Status</h2>
+    <pre id="mm-status" style="color:#aaa;">Fetching...</pre>
+  </div>
+
+  <div class="footer">
+    Real‑time pump.fun token monitor. No trading – observation only.<br>
+    Connects to PumpPortal WebSocket. Fallback to API poll. Auto‑cleanup stale tokens.
+  </div>
+
+  <script>
+    (function() {
+      const WS_URL = 'wss://pumpportal.fun/api/data';
+      const SPIKE_THRESHOLD = 150;
+      const MCAP_MIN_SOL = 5;
+      const MCAP_MAX_SOL = 500;
+      const STALE_TIMEOUT_SEC = 120;
+
+      const tokens = {};
+      let ws = null;
+      let reconnectTimer = null;
+      const tableBody = document.getElementById('table-body');
+      const statusDot = document.getElementById('status-dot');
+      const statusText = document.getElementById('status-text');
+      const activeCount = document.getElementById('active-count');
+      const spikedCount = document.getElementById('spiked-count');
+      const logList = document.getElementById('log-list');
+      const mmStatus = document.getElementById('mm-status');
+
+      // Sound alert
+      const alertSound = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACAf39/f4B/f3+Af3+Af3+AgH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/');
+
+      function tokenState(mint, name, symbol) {
+        return {
+          mint,
+          name: name || '?',
+          symbol: symbol || '?',
+          initialMcap: 0,
+          peakMcap: 0,
+          currentMcap: 0,
+          wallets: new Set(),
+          buyCount: 0,
+          sellCount: 0,
+          totalBuySol: 0,
+          totalSellSol: 0,
+          firstSeen: Date.now(),
+          lastUpdate: Date.now(),
+          alerted: false
+        };
+      }
+
+      function getSpikePct(token) {
+        if (token.initialMcap <= 0) return 0;
+        return ((token.peakMcap - token.initialMcap) / token.initialMcap) * 100;
+      }
+
+      function isTracked(token) {
+        return token.currentMcap >= MCAP_MIN_SOL && token.currentMcap <= MCAP_MAX_SOL &&
+               (Date.now() - token.lastUpdate) < STALE_TIMEOUT_SEC * 1000;
+      }
+
+      function logAlert(msg) {
+        const li = document.createElement('li');
+        li.innerHTML = msg;
+        logList.prepend(li);
+        if (logList.children.length > 50) logList.lastChild.remove();
+      }
+
+      function updateUI() {
+        const spikedList = [];
+        for (const mint in tokens) {
+          const t = tokens[mint];
+          if (!isTracked(t)) continue;
+          const spike = getSpikePct(t);
+          if (spike >= SPIKE_THRESHOLD) {
+            spikedList.push(t);
+          }
+        }
+
+        spikedList.sort((a, b) => getSpikePct(b) - getSpikePct(a));
+        tableBody.innerHTML = '';
+        if (spikedList.length === 0) {
+          tableBody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:#555;">No tokens above 150% yet.</td></tr>';
+        } else {
+          for (const token of spikedList) {
+            const spike = getSpikePct(token);
+            const buyTotal = token.buyCount + token.sellCount;
+            const buyRatio = buyTotal > 0 ? (token.buyCount / buyTotal).toFixed(2) : '0.00';
+            const netFlow = token.totalBuySol - token.totalSellSol;
+            const ageMinutes = ((Date.now() - token.firstSeen) / 60000).toFixed(1);
+            const spikeClass = spike >= 300 ? 'huge' : '';
+            const row = document.createElement('tr');
+            row.innerHTML = `
+              <td>${token.name}</td>
+              <td style="color:#ff0;">$${token.symbol}</td>
+              <td class="mcap">${token.currentMcap.toFixed(2)}</td>
+              <td class="spike-value ${spikeClass}">+${spike.toFixed(0)}%</td>
+              <td class="mcap">${token.peakMcap.toFixed(2)}</td>
+              <td class="wallet">${token.wallets.size}</td>
+              <td class="buy-ratio">${buyRatio}</td>
+              <td class="net-flow" style="color:${netFlow >= 0 ? '#0f0' : '#f00'};">${netFlow >= 0 ? '+' : ''}${netFlow.toFixed(2)}</td>
+              <td class="age">${ageMinutes}m</td>
+              <td><a class="link" href="https://pump.fun/coin/${token.mint}" target="_blank">🔗</a></td>`;
+            tableBody.appendChild(row);
+          }
+        }
+
+        const activeTokens = Object.values(tokens).filter(t => isTracked(t)).length;
+        const spikedNow = spikedList.length;
+        activeCount.textContent = activeTokens;
+        spikedCount.textContent = spikedNow;
+      }
+
+      // Fallback API polling
+      async function pollApi() {
+        try {
+          const resp = await fetch('/api/tokens');
+          const data = await resp.json();
+          if (!data.length) return;
+          // Merge API data into local token store (simplified)
+          data.forEach(t => {
+            const mint = t.mint;
+            if (!tokens[mint]) {
+              tokens[mint] = tokenState(mint, t.name, t.symbol);
+              tokens[mint].initialMcap = t.mcap;
+              tokens[mint].peakMcap = t.peak_mcap;
+              tokens[mint].currentMcap = t.mcap;
+              tokens[mint].buyCount = t.buy_ratio * 100; // approximation
+              tokens[mint].sellCount = 100 - tokens[mint].buyCount;
+              tokens[mint].lastUpdate = Date.now();
+            }
+          });
+          updateUI();
+        } catch(e) {}
+      }
+
+      // MM status polling
+      setInterval(async () => {
+        try {
+          const resp = await fetch('/api/mm_status');
+          const data = await resp.json();
+          mmStatus.textContent = JSON.stringify(data, null, 2);
+        } catch(e) {}
+      }, 5000);
+
+      // Connect WebSocket
+      function connect() {
+        if (ws) ws.close();
+        ws = new WebSocket(WS_URL);
+
+        ws.onopen = () => {
+          statusDot.className = 'status connected';
+          statusText.textContent = 'Connected';
+          ws.send(JSON.stringify({ method: 'subscribeNewToken' }));
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          const type = msg.type;
+
+          if (type === 'new_token') {
+            const mint = msg.mint;
+            if (!tokens[mint]) {
+              tokens[mint] = tokenState(mint, msg.name, msg.symbol);
+              tokens[mint].initialMcap = parseFloat(msg.marketCapSol) || 0;
+              tokens[mint].peakMcap = tokens[mint].initialMcap;
+              tokens[mint].currentMcap = tokens[mint].initialMcap;
+              ws.send(JSON.stringify({
+                method: 'subscribeTokenTrade',
+                keys: [mint]
+              }));
+            }
+          } else if (type === 'token_trade' || type === 'trade') {
+            const mint = msg.mint;
+            if (!tokens[mint]) {
+              tokens[mint] = tokenState(mint, msg.name, msg.symbol);
+              tokens[mint].initialMcap = parseFloat(msg.marketCapSol) || 0;
+              tokens[mint].peakMcap = tokens[mint].initialMcap;
+              tokens[mint].currentMcap = tokens[mint].initialMcap;
+            }
+            const token = tokens[mint];
+            token.lastUpdate = Date.now();
+
+            const solAmount = parseFloat(msg.solAmount) || 0;
+            const isBuy = msg.isBuy !== false;
+            const trader = msg.traderPublicKey || '';
+            const mcap = parseFloat(msg.marketCapSol) || token.currentMcap;
+
+            token.currentMcap = mcap;
+            if (mcap > token.peakMcap) token.peakMcap = mcap;
+            if (trader) token.wallets.add(trader);
+            if (isBuy) {
+              token.buyCount++;
+              token.totalBuySol += solAmount;
+            } else {
+              token.sellCount++;
+              token.totalSellSol += solAmount;
+            }
+
+            const spike = getSpikePct(token);
+            if (!token.alerted && spike >= SPIKE_THRESHOLD) {
+              token.alerted = true;
+              alertSound.play().catch(() => {});
+              logAlert(`<span style="color:#888;">${new Date().toLocaleTimeString()}</span> 🚀 <b style="color:#ff0;">${token.symbol}</b> +${spike.toFixed(0)}% — MCap ${mcap.toFixed(2)} SOL`);
+            }
+          }
+        };
+
+        ws.onclose = () => {
+          statusDot.className = 'status disconnected';
+          statusText.textContent = 'Disconnected – retrying...';
+          clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(connect, 5000);
+        };
+
+        ws.onerror = () => {};
+      }
+
+      // Start
+      connect();
+      setInterval(updateUI, 2000);
+      setInterval(pollApi, 5000); // fallback
+
+      // Cleanup stale tokens
+      setInterval(() => {
+        const now = Date.now();
+        for (const mint in tokens) {
+          if ((now - tokens[mint].lastUpdate) > STALE_TIMEOUT_SEC * 1000 * 2) {
+            delete tokens[mint];
+          }
+        }
+      }, 10000);
+    })();
+  </script>
+</body>
+</html>

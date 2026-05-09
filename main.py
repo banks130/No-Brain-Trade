@@ -1,64 +1,114 @@
 #!/usr/bin/env python3
 import asyncio
 import threading
+import signal
 import sys
+
 from detector import TrendingDetector
 from signal_bot import SignalBot
 from trader import TradeBot
 from market_maker import MarketMaker
-from web_dashboard.app import app, start_flask, detector, market_maker
+from web_dashboard.app import app, start_flask  # ← uses waitress
 from config import MM_TOKENS, TELEGRAM_BOT_TOKEN
 from utils import logger
 from telegram.ext import Application
 
+# We'll store references so the shutdown handler can access them
+trader = None
+market_maker = None
+detector = None
+telegram_app = None
+tasks = []
+
 async def main():
-    # Initialize modules
-    det = TrendingDetector()
+    global trader, market_maker, detector, telegram_app, tasks
+
+    # ── 1. Modules ──────────────────────────────────
+    detector = TrendingDetector()
     trader = TradeBot()
-    mm = MarketMaker()
-    signal = SignalBot(trader=trader, mm=mm)
+    market_maker = MarketMaker()
+    signal_bot = SignalBot(trader=trader, mm=market_maker)
 
-    # Set Flask globals
+    # Inject into Flask globals
     import web_dashboard.app as dash
-    dash.detector = det
-    dash.market_maker = mm
+    dash.detector = detector
+    dash.market_maker = market_maker
 
-    # Start Telegram bot in its own asyncio task
+    # ── 2. Telegram bot setup ───────────────────────
     if TELEGRAM_BOT_TOKEN:
-        app_telegram = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-        signal.register_handlers(app_telegram)
-        asyncio.create_task(app_telegram.run_polling())
+        telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        signal_bot.register_handlers(telegram_app)
+        # Initialize and start the bot properly (non‐blocking)
+        await telegram_app.initialize()
+        await telegram_app.start()
+        # Start polling (run in background – we don't await it)
+        asyncio.create_task(telegram_app.updater.start_polling())
+        logger.info("Telegram bot started")
+    else:
+        logger.warning("Telegram token not set – bot disabled")
 
-    # Connect detector WebSocket and register callbacks
-    det.on_spike(lambda token: signal.send_spike(token))
-    det.on_strong_signal(lambda token: trader.execute_buy(token.mint, token.symbol))
+    # ── 3. Detector callbacks ───────────────────────
+    async def on_spike(token):
+        await signal_bot.send_spike(token)
 
-    # Start background tasks
-    asyncio.create_task(det.connect())
-    asyncio.create_task(trader.monitor_positions())
+    async def on_strong_signal(token):
+        if signal_bot.auto_buy_enabled:
+            await trader.execute_buy(token.mint, token.symbol)
 
-    # Start market making if tokens configured
+    detector.on_spike(on_spike)
+    detector.on_strong_signal(on_strong_signal)
+
+    # ── 4. Background tasks ─────────────────────────
+    tasks = [
+        asyncio.create_task(detector.connect()),
+        asyncio.create_task(trader.monitor_positions()),
+    ]
+
+    # Market making
     if MM_TOKENS:
         for mint in MM_TOKENS:
-            await mm.add_token(mint.strip())
-        asyncio.create_task(mm.run())
+            mint = mint.strip()
+            if mint:
+                await market_maker.add_token(mint)
+        tasks.append(asyncio.create_task(market_maker.run()))
 
-    # Start Flask in a daemon thread
+    # ── 5. Flask in a daemon thread ────────────────
     flask_thread = threading.Thread(target=start_flask, daemon=True)
     flask_thread.start()
-    logger.info("Web dashboard running on http://localhost:5000")
+    logger.info("Web dashboard running on http://0.0.0.0:5000")
 
-    # Run until interrupt
-    try:
-        while True:
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Shutdown requested")
-    finally:
+    # ── 6. Wait until shutdown signal ───────────────
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+
+    def shutdown():
+        logger.info("Shutdown signal received")
+        stop_event.set()
+
+    loop.add_signal_handler(signal.SIGTERM, shutdown)
+    loop.add_signal_handler(signal.SIGINT, shutdown)
+
+    await stop_event.wait()
+
+    # ── 7. Clean shutdown ───────────────────────────
+    logger.info("Shutting down all modules…")
+    if trader:
         await trader.emergency_kill()
-        await mm.emergency_kill()
-        # Close websocket, etc.
-        logger.info("NoBrainTrade stopped.")
+    if market_maker:
+        await market_maker.emergency_kill()
+
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    if telegram_app:
+        await telegram_app.stop()
+        await telegram_app.shutdown()
+
+    logger.info("NoBrainTrade stopped cleanly.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

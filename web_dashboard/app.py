@@ -1,9 +1,9 @@
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify
 from flask_cors import CORS
 from waitress import serve
 import os
 
-app = Flask(__name__, template_folder=".")
+app = Flask(__name__)
 CORS(app)
 
 detector = None
@@ -11,7 +11,7 @@ market_maker = None
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return "NoBrainTrade is running. Dashboard will appear here.", 200
 
 @app.route("/api/tokens")
 def api_tokens():
@@ -19,10 +19,15 @@ def api_tokens():
         return jsonify([])
     spiked = detector.get_spiked_tokens()
     return jsonify([{
-        "mint": t.mint, "name": t.name, "symbol": t.symbol,
-        "mcap": t.current_mcap, "spike_pct": t.spike_pct,
-        "peak_mcap": t.peak_mcap, "wallets": t.unique_wallet_count,
-        "buy_ratio": t.buy_ratio, "net_sol": t.net_sol_flow,
+        "mint": t.mint,
+        "name": t.name,
+        "symbol": t.symbol,
+        "mcap": t.current_mcap,
+        "spike_pct": t.spike_pct,
+        "peak_mcap": t.peak_mcap,
+        "wallets": t.unique_wallet_count,
+        "buy_ratio": t.buy_ratio,
+        "net_sol": t.net_sol_flow,
         "age": t.age_seconds,
     } for t in spiked])
 

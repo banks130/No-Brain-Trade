@@ -2,7 +2,7 @@
 signal_bot.py  –  NoBrainTrade Telegram Bot
 APEX-style UI: inline keyboards, dashboard /start, formatted admin alerts
 Token CA scanner: paste any address → instant details + quick trade buttons
-MM flow: Strategy → Duration → Price → Pay
+Fixed token info with pump.fun + DexScreener fallback
 """
 
 import asyncio
@@ -485,25 +485,51 @@ class SignalBot:
         except TelegramError as e:
             logger.error(f"Signal send failed: {e}")
 
-    # ── Token info fetcher for CA scanner ─────────────────────────────────────
+    # ── Token info fetcher (FIXED with multi-source fallback) ──────────────────
+
     async def fetch_token_info(self, mint: str) -> Optional[dict]:
-        """Return token details from pump.fun."""
-        url = f"https://frontend-api.pump.fun/coins/{mint}"
+        """Return token details using pump.fun API and DexScreener as fallback."""
+        # Primary: pump.fun API
         try:
             async with aiohttp.ClientSession() as sess:
-                async with sess.get(url) as resp:
-                    data = await resp.json()
-                    return {
-                        "name": data.get("name", "?"),
-                        "symbol": data.get("symbol", "?"),
-                        "mcap": float(data.get("usd_market_cap", 0)),
-                        "price": float(data.get("price", 0)),
-                        "volume_24h": float(data.get("volume_24h", 0)),
-                        "holders": data.get("holder_count", 0),
-                        "created": data.get("created_at", ""),
-                    }
+                async with sess.get(f"https://frontend-api.pump.fun/coins/{mint}") as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return {
+                            "name": data.get("name", "?"),
+                            "symbol": data.get("symbol", "?"),
+                            "mcap": float(data.get("usd_market_cap", 0)),
+                            "price": float(data.get("price", 0)),
+                            "volume_24h": float(data.get("volume_24h", 0)),
+                            "holders": data.get("holder_count", 0),
+                        }
         except Exception:
-            return None
+            pass
+
+        # Fallback: DexScreener (free, no API key)
+        try:
+            async with aiohttp.ClientSession() as sess:
+                async with sess.get(f"https://api.dexscreener.com/latest/dex/tokens/{mint}") as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        pairs = data.get("pairs", [])
+                        # Look for a pump.fun pair or any Solana pair
+                        pump_pair = next((p for p in pairs if p.get("dexId") == "pump"), None)
+                        if not pump_pair:
+                            pump_pair = next((p for p in pairs if p.get("chainId") == "solana"), None)
+                        if pump_pair:
+                            return {
+                                "name": pump_pair.get("baseToken", {}).get("name", "?"),
+                                "symbol": pump_pair.get("baseToken", {}).get("symbol", "?"),
+                                "mcap": float(pump_pair.get("marketCap", 0) or 0),
+                                "price": float(pump_pair.get("priceUsd", 0) or 0),
+                                "volume_24h": float(pump_pair.get("volume", {}).get("h24", 0) or 0),
+                                "holders": 0,
+                            }
+        except Exception:
+            pass
+
+        return None
 
     # ──────────────────────────────────────────────────────────────────────────
     # /start  &  dashboard refresh
@@ -602,7 +628,6 @@ class SignalBot:
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Back", callback_data="menu_main")]]),
             )
 
-        # ── Copy Trade (replaces Volume Boost) ─────────────────────────────────
         elif data == "menu_copy_trade":
             await q.edit_message_text(
                 "📋 <b>Copy Trade</b>\n\n"
@@ -926,17 +951,15 @@ class SignalBot:
                     await update.message.reply_text("❌ Format: withdraw &lt;address&gt; &lt;amount&gt;", parse_mode=ParseMode.HTML)
             return
 
-        # If not pending, treat text as a potential CA for quick trade
+        # ── Token CA scanner (any address pasted) ──────────────────────────
         if len(text) >= 32 and " " not in text:
             trader = self.user_traders.get(uid)
 
-            # Fetch token details
             info = await self.fetch_token_info(text)
             if not info:
-                await update.message.reply_text("❌ Could not fetch token info. Check the address.")
+                await update.message.reply_text("❌ Could not fetch token info. Check the address or try again later.")
                 return
 
-            # Build a detailed response
             detail = (
                 f"🔍 <b>Token Found</b>\n"
                 f"🪙 <b>{info['name']} ({info['symbol']})</b>\n"
@@ -947,7 +970,6 @@ class SignalBot:
                 f"<a href='https://pump.fun/coin/{text}'>View on pump.fun</a>"
             )
 
-            # Quick action buttons (Buy / Sell / Cancel)
             kb = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("🟢 Buy", callback_data=f"quick_buy_{text}"),
@@ -982,10 +1004,7 @@ class SignalBot:
         except Exception as e:
             await update.message.reply_text(f"❌ Withdraw failed: {e}")
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # Shared view helpers
-    # ──────────────────────────────────────────────────────────────────────────
-
+    # ── Shared view helpers ────────────────────────────────────────────────
     async def _show_positions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         q = update.callback_query
         uid = update.effective_user.id
@@ -1057,10 +1076,7 @@ class SignalBot:
             reply_markup=back_kb, disable_web_page_preview=True,
         )
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # Slash command fallbacks (still usable via command menu)
-    # ──────────────────────────────────────────────────────────────────────────
-
+    # ── Slash command fallbacks ───────────────────────────────────────────────
     async def cmd_buy(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         uid = update.effective_user.id
         trader = self.user_traders.get(uid)
@@ -1163,10 +1179,7 @@ class SignalBot:
             reply_markup=main_menu_keyboard(), disable_web_page_preview=True,
         )
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # Admin slash commands
-    # ──────────────────────────────────────────────────────────────────────────
-
+    # ── Admin slash commands ──────────────────────────────────────────────────
     async def cmd_admin_mm_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self._is_admin(update):
             return
@@ -1225,10 +1238,7 @@ class SignalBot:
         self.mm_sessions.clear()
         await update.message.reply_text(f"🛑 Kill executed. Positions closed: {killed}. MM stopped.")
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # Handler registration
-    # ──────────────────────────────────────────────────────────────────────────
-
+    # ── Register handlers ─────────────────────────────────────────────────────
     def register_handlers(self, application: Application):
         from telegram.ext import MessageHandler, filters
 

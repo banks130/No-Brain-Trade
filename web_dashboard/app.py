@@ -6,36 +6,9 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-detector = None
-market_maker = None
-
 @app.route("/")
 def index():
-    return "NoBrainTrade is running. Dashboard will appear here.", 200
-
-@app.route("/api/tokens")
-def api_tokens():
-    if not detector:
-        return jsonify([])
-    spiked = detector.get_spiked_tokens()
-    return jsonify([{
-        "mint": t.mint,
-        "name": t.name,
-        "symbol": t.symbol,
-        "mcap": t.current_mcap,
-        "spike_pct": t.spike_pct,
-        "peak_mcap": t.peak_mcap,
-        "wallets": t.unique_wallet_count,
-        "buy_ratio": t.buy_ratio,
-        "net_sol": t.net_sol_flow,
-        "age": t.age_seconds,
-    } for t in spiked])
-
-@app.route("/api/mm_status")
-def api_mm_status():
-    if market_maker:
-        return jsonify({"status": "active", "tokens": list(market_maker.tokens.keys())})
-    return jsonify({"status": "inactive"})
+    return "NoBrainTrade Dashboard is LIVE. Add your HTML later."
 
 @app.route("/health")
 def health():
@@ -43,5 +16,5 @@ def health():
 
 def start_flask(host="0.0.0.0", port=None):
     if port is None:
-        port = int(os.environ.get("PORT", 5000))
+        port = int(os.environ.get("PORT", 8080))
     serve(app, host=host, port=port)

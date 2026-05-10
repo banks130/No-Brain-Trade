@@ -1,393 +1,809 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🧠 No Brain Trade – ≥150% Spike Terminal</title>
+  <title>🧠 NO BRAIN TRADE</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    :root {
+      --bg: #050508;
+      --bg2: #0a0a10;
+      --bg3: #0f0f18;
+      --border: #1a1a2e;
+      --neon-purple: #9945ff;
+      --neon-gold: #ffd700;
+      --neon-green: #00ff88;
+      --neon-red: #ff3366;
+      --neon-cyan: #00e5ff;
+      --text: #c8c8e0;
+      --text-dim: #555570;
     }
-    body {
-      background: #0a0a0a;
-      color: #00ff88;
-      font-family: 'Courier New', monospace;
-      padding: 20px;
-      min-height: 100vh;
-    }
-    h1 {
-      color: #ff0095;
-      margin-bottom: 10px;
-      text-shadow: 0 0 8px #ff0095;
-    }
-    .stats {
-      display: flex;
-      gap: 30px;
-      margin-bottom: 20px;
-      color: #aaa;
-      flex-wrap: wrap;
-    }
-    .table-wrapper {
-      overflow-x: auto;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      border: 1px solid #333;
-    }
-    th, td {
-      padding: 8px 12px;
-      text-align: left;
-      border-bottom: 1px solid #222;
-    }
-    th {
-      background: #1a1a1a;
-      color: #0ff;
-      position: sticky;
-      top: 0;
-      z-index: 2;
-    }
-    tr:hover td {
-      background: #111;
-    }
-    .spike-value {
-      font-weight: bold;
-      color: #ff4444;
-    }
-    .spike-value.huge {
-      color: #ff0;
-    }
-    .mcap {
-      color: #0f0;
-    }
-    .wallet {
-      color: #fff;
-    }
-    .buy-ratio {
-      color: #0ff;
-    }
-    .net-flow {
-      color: #ff8800;
-    }
-    .age {
-      color: #888;
-    }
-    .link {
-      color: #88f;
-      text-decoration: none;
-    }
-    .link:hover {
-      text-decoration: underline;
-    }
-    .footer {
-      margin-top: 30px;
-      color: #444;
-      font-size: 12px;
-    }
-    .status {
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      margin-right: 6px;
-    }
-    .status.connected {
-      background: #0f0;
-      box-shadow: 0 0 8px #0f0;
-    }
-    .status.disconnected {
-      background: #f00;
-      box-shadow: 0 0 8px #f00;
-    }
-    #mm-section {
-      margin-top: 30px;
-    }
-    #alert-log {
-      max-height: 300px;
-      overflow-y: auto;
-      background: #111;
-      padding: 10px;
-      border-radius: 6px;
-      margin-top: 20px;
-      font-size: 13px;
-      color: #aaa;
-    }
-    #alert-log li {
-      margin-bottom: 4px;
-    }
+
+```
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Scanline overlay */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.08) 2px,
+    rgba(0,0,0,0.08) 4px
+  );
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* Header */
+.header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--neon-purple);
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  box-shadow: 0 0 30px rgba(153,69,255,0.15);
+}
+
+.logo {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--neon-purple);
+  text-shadow: 0 0 15px rgba(153,69,255,0.8);
+  letter-spacing: 2px;
+}
+
+.logo span {
+  color: var(--neon-gold);
+  text-shadow: 0 0 15px rgba(255,215,0,0.8);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.conn-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--neon-red);
+  box-shadow: 0 0 8px var(--neon-red);
+  animation: pulse 1.5s infinite;
+}
+.dot.live {
+  background: var(--neon-green);
+  box-shadow: 0 0 8px var(--neon-green);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.last-update {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Stats bar */
+.stats-bar {
+  display: flex;
+  gap: 0;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.stat-box {
+  flex: 1;
+  min-width: 120px;
+  padding: 12px 18px;
+  border-right: 1px solid var(--border);
+  text-align: center;
+}
+
+.stat-box:last-child { border-right: none; }
+
+.stat-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 10px rgba(0,229,255,0.5);
+}
+
+.stat-value.green { color: var(--neon-green); text-shadow: 0 0 10px rgba(0,255,136,0.5); }
+.stat-value.gold { color: var(--neon-gold); text-shadow: 0 0 10px rgba(255,215,0,0.5); }
+.stat-value.red { color: var(--neon-red); text-shadow: 0 0 10px rgba(255,51,102,0.5); }
+
+/* Main layout */
+.main {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Section headers */
+.section-header {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--neon-purple);
+  text-transform: uppercase;
+  padding: 8px 0 8px 12px;
+  border-left: 3px solid var(--neon-purple);
+  margin-bottom: 10px;
+}
+
+/* Token table */
+.table-container {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 700px;
+}
+
+thead tr {
+  background: var(--bg3);
+  border-bottom: 1px solid var(--neon-purple);
+}
+
+th {
+  padding: 10px 14px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--neon-purple);
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-align: left;
+}
+
+tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+
+tbody tr:hover {
+  background: rgba(153,69,255,0.06);
+}
+
+tbody tr.new-row {
+  animation: rowFlash 0.6s ease-out;
+}
+
+@keyframes rowFlash {
+  0% { background: rgba(153,69,255,0.3); }
+  100% { background: transparent; }
+}
+
+td {
+  padding: 10px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.td-name { color: var(--text); font-weight: bold; }
+.td-symbol { color: var(--neon-gold); }
+.td-mcap { color: var(--neon-green); }
+
+.td-spike {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+}
+.spike-hot { color: #ff4444; text-shadow: 0 0 8px rgba(255,68,68,0.6); }
+.spike-moon { color: var(--neon-gold); text-shadow: 0 0 8px rgba(255,215,0,0.6); }
+.spike-nuke { color: var(--neon-purple); text-shadow: 0 0 12px rgba(153,69,255,0.8); animation: nukePulse 1s infinite; }
+
+@keyframes nukePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.td-wallets { color: var(--neon-cyan); }
+
+.td-ratio {
+  font-size: 12px;
+}
+.ratio-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ratio-bar {
+  width: 50px;
+  height: 4px;
+  background: rgba(255,51,102,0.3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.ratio-fill {
+  height: 100%;
+  background: var(--neon-green);
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+.td-flow-pos { color: var(--neon-green); }
+.td-flow-neg { color: var(--neon-red); }
+
+.td-age { color: var(--text-dim); font-size: 12px; }
+
+.td-link a {
+  color: var(--neon-purple);
+  text-decoration: none;
+  font-size: 16px;
+  transition: color 0.2s, text-shadow 0.2s;
+}
+.td-link a:hover {
+  color: var(--neon-gold);
+  text-shadow: 0 0 8px var(--neon-gold);
+}
+
+.score-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+}
+.score-high { background: rgba(0,255,136,0.15); color: var(--neon-green); border: 1px solid rgba(0,255,136,0.4); }
+.score-mid { background: rgba(255,215,0,0.1); color: var(--neon-gold); border: 1px solid rgba(255,215,0,0.3); }
+.score-low { background: rgba(255,51,102,0.1); color: var(--neon-red); border: 1px solid rgba(255,51,102,0.3); }
+
+.empty-state {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 60px 20px;
+  font-size: 14px;
+}
+.empty-state .empty-icon { font-size: 36px; margin-bottom: 12px; }
+.empty-state .empty-sub { font-size: 12px; margin-top: 6px; color: #333355; }
+
+/* Alert log */
+.alert-panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.alert-header {
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.alert-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.alert-list::-webkit-scrollbar { width: 4px; }
+.alert-list::-webkit-scrollbar-track { background: var(--bg2); }
+.alert-list::-webkit-scrollbar-thumb { background: var(--neon-purple); border-radius: 2px; }
+
+.alert-item {
+  padding: 6px 14px;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(26,26,46,0.5);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.alert-time { color: var(--text-dim); font-size: 11px; min-width: 70px; }
+.alert-symbol { color: var(--neon-gold); font-weight: bold; min-width: 60px; }
+.alert-spike { color: var(--neon-red); font-family: 'Orbitron', sans-serif; font-size: 11px; min-width: 70px; }
+.alert-mcap { color: var(--neon-green); font-size: 11px; }
+
+.no-alerts {
+  text-align: center;
+  padding: 30px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* MM section */
+.mm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+.mm-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.mm-card-mint {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mm-card-stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.mm-disabled {
+  text-align: center;
+  padding: 30px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* Ticker tape */
+.ticker-wrap {
+  background: var(--bg3);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.ticker-inner {
+  display: flex;
+  animation: tickerScroll 30s linear infinite;
+  white-space: nowrap;
+}
+
+@keyframes tickerScroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.ticker-item {
+  padding: 0 24px;
+  font-size: 12px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ticker-item .t-sym { color: var(--neon-gold); }
+.ticker-item .t-spike { color: var(--neon-red); font-family: 'Orbitron', sans-serif; font-size: 11px; }
+.ticker-sep { color: var(--border); }
+
+/* Footer */
+.footer {
+  padding: 16px;
+  text-align: center;
+  font-size: 11px;
+  color: #2a2a40;
+  border-top: 1px solid var(--border);
+}
+
+/* Blink animation for header */
+.blink {
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink {
+  50% { opacity: 0; }
+}
+```
+
   </style>
 </head>
 <body>
 
-  <h1>🧠 No Brain Trade – ≥150% Spike Detector</h1>
-  <div class="stats">
-    <div>Connection: <span class="status disconnected" id="status-dot"></span> <span id="status-text">Disconnected</span></div>
-    <div>Active tokens tracked: <span id="active-count">0</span></div>
-    <div>Spiked (≥150%): <span id="spiked-count">0</span></div>
+  <!-- Header -->
+
+  <div class="header">
+    <div class="logo">NO BRAIN <span>TRADE</span> <span style="color:var(--neon-cyan);font-size:12px;">≥150% SPIKE TERMINAL</span></div>
+    <div class="header-right">
+      <div class="conn-status">
+        <div class="dot" id="conn-dot"></div>
+        <span id="conn-text">CONNECTING...</span>
+      </div>
+      <div class="last-update">LAST UPDATE: <span id="last-update-time">—</span></div>
+    </div>
   </div>
 
-  <div class="table-wrapper">
-    <table id="spike-table">
-      <thead>
-        <tr>
-          <th>Token</th>
-          <th>Symbol</th>
-          <th>MCap (SOL)</th>
-          <th>Spike %</th>
-          <th>Peak MCap</th>
-          <th>Wallets</th>
-          <th>Buy Ratio</th>
-          <th>Net SOL</th>
-          <th>Age</th>
-          <th>Link</th>
-        </tr>
-      </thead>
-      <tbody id="table-body">
-        <tr><td colspan="10" style="text-align:center; color:#555;">Waiting for tokens...</td></tr>
-      </tbody>
-    </table>
+  <!-- Ticker tape -->
+
+  <div class="ticker-wrap">
+    <div class="ticker-inner" id="ticker-inner">
+      <div class="ticker-item"><span class="t-sym">WAITING</span> <span class="t-spike">FOR SPIKES...</span> <span class="ticker-sep">◆</span></div>
+      <div class="ticker-item"><span class="t-sym">WAITING</span> <span class="t-spike">FOR SPIKES...</span> <span class="ticker-sep">◆</span></div>
+    </div>
   </div>
 
-  <div id="alert-log">
-    <h3 style="color:#0ff;">Spike Alerts (Last 50)</h3>
-    <ul id="log-list" style="list-style:none;padding:0;"></ul>
+  <!-- Stats bar -->
+
+  <div class="stats-bar">
+    <div class="stat-box">
+      <div class="stat-label">TRACKING</div>
+      <div class="stat-value" id="stat-tracked">—</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">ACTIVE (5M)</div>
+      <div class="stat-value green" id="stat-active">—</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">SPIKED ≥150%</div>
+      <div class="stat-value gold" id="stat-spiked">—</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">REFRESH</div>
+      <div class="stat-value red blink" id="stat-refresh">3s</div>
+    </div>
   </div>
 
-  <div id="mm-section">
-    <h2 style="color:#0ff;">Market Maker Status</h2>
-    <pre id="mm-status" style="color:#aaa;">Fetching...</pre>
+  <!-- Main -->
+
+  <div class="main">
+
+```
+<!-- Spike table -->
+<div>
+  <div class="section-header">🔥 LIVE SPIKE FEED</div>
+  <div class="table-container">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Token</th>
+            <th>Symbol</th>
+            <th>MCap (SOL)</th>
+            <th>Spike %</th>
+            <th>Peak MCap</th>
+            <th>Wallets</th>
+            <th>Buy Ratio</th>
+            <th>Net SOL Flow</th>
+            <th>Age</th>
+            <th>Score</th>
+            <th>Link</th>
+          </tr>
+        </thead>
+        <tbody id="token-tbody">
+          <tr>
+            <td colspan="11">
+              <div class="empty-state">
+                <div class="empty-icon">📡</div>
+                <div>Scanning pump.fun for spikes...</div>
+                <div class="empty-sub">Tokens with ≥150% spike from initial mcap will appear here</div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Alert log -->
+<div>
+  <div class="section-header">⚡ SPIKE ALERTS</div>
+  <div class="alert-panel">
+    <div class="alert-header">
+      <span style="font-size:11px;color:var(--text-dim);">REAL-TIME ALERTS — LAST 50</span>
+      <span id="alert-count" style="font-size:11px;color:var(--neon-purple);">0 alerts</span>
+    </div>
+    <div class="alert-list" id="alert-list">
+      <div class="no-alerts">No spike alerts yet — waiting for 150%+ moves...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Market Maker status -->
+<div>
+  <div class="section-header">🏦 MARKET MAKER STATUS</div>
+  <div class="alert-panel">
+    <div class="mm-grid" id="mm-grid">
+      <div class="mm-disabled">Loading market maker status...</div>
+    </div>
+  </div>
+</div>
+```
+
   </div>
 
   <div class="footer">
-    Real‑time pump.fun token monitor. No trading – observation only.<br>
-    Connects to PumpPortal WebSocket. Fallback to API poll. Auto‑cleanup stale tokens.
+    NO BRAIN TRADE — PUMP.FUN LIVE SPIKE TERMINAL — DATA VIA PUMPPORTAL WEBSOCKET
   </div>
 
   <script>
-    (function() {
-      const WS_URL = 'wss://pumpportal.fun/api/data';
-      const SPIKE_THRESHOLD = 150;
-      const MCAP_MIN_SOL = 5;
-      const MCAP_MAX_SOL = 500;
-      const STALE_TIMEOUT_SEC = 120;
+  (function() {
+    // State
+    let tokens = {};
+    let alerts = [];
+    let refreshCountdown = 3;
+    let isLive = false;
 
-      const tokens = {};
-      let ws = null;
-      let reconnectTimer = null;
-      const tableBody = document.getElementById('table-body');
-      const statusDot = document.getElementById('status-dot');
-      const statusText = document.getElementById('status-text');
-      const activeCount = document.getElementById('active-count');
-      const spikedCount = document.getElementById('spiked-count');
-      const logList = document.getElementById('log-list');
-      const mmStatus = document.getElementById('mm-status');
+    const tbody = document.getElementById('token-tbody');
+    const alertList = document.getElementById('alert-list');
+    const alertCount = document.getElementById('alert-count');
+    const connDot = document.getElementById('conn-dot');
+    const connText = document.getElementById('conn-text');
+    const lastUpdateEl = document.getElementById('last-update-time');
+    const statTracked = document.getElementById('stat-tracked');
+    const statActive = document.getElementById('stat-active');
+    const statSpiked = document.getElementById('stat-spiked');
+    const statRefresh = document.getElementById('stat-refresh');
+    const mmGrid = document.getElementById('mm-grid');
+    const tickerInner = document.getElementById('ticker-inner');
 
-      // Sound alert
-      const alertSound = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACAf39/f4B/f3+Af3+Af3+AgH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/f3+Af3+Af39/gH9/');
+    function setLive(live) {
+      isLive = live;
+      connDot.className = 'dot' + (live ? ' live' : '');
+      connText.textContent = live ? 'LIVE' : 'RECONNECTING...';
+    }
 
-      function tokenState(mint, name, symbol) {
-        return {
-          mint,
-          name: name || '?',
-          symbol: symbol || '?',
-          initialMcap: 0,
-          peakMcap: 0,
-          currentMcap: 0,
-          wallets: new Set(),
-          buyCount: 0,
-          sellCount: 0,
-          totalBuySol: 0,
-          totalSellSol: 0,
-          firstSeen: Date.now(),
-          lastUpdate: Date.now(),
-          alerted: false
-        };
+    function formatAge(sec) {
+      if (sec < 60) return Math.floor(sec) + 's';
+      if (sec < 3600) return Math.floor(sec/60) + 'm';
+      return Math.floor(sec/3600) + 'h';
+    }
+
+    function spikeClass(pct) {
+      if (pct >= 500) return 'spike-nuke';
+      if (pct >= 300) return 'spike-moon';
+      return 'spike-hot';
+    }
+
+    function spikeEmoji(pct) {
+      if (pct >= 500) return '💀';
+      if (pct >= 300) return '🌙';
+      return '🔥';
+    }
+
+    function scoreClass(pct, ratio) {
+      const s = Math.min(100, (pct - 150) * 0.3 + ratio * 30);
+      if (s >= 60) return 'score-high';
+      if (s >= 30) return 'score-mid';
+      return 'score-low';
+    }
+
+    function calcScore(spike, ratio, wallets) {
+      let s = 0;
+      s += Math.min((spike - 150) * 0.5, 25);
+      s += Math.min(ratio * 20, 20);
+      s += Math.min(wallets / 5 * 15, 15);
+      return Math.min(Math.round(s), 100);
+    }
+
+    function renderTable(tokenList) {
+      if (!tokenList.length) {
+        tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="empty-icon">📡</div><div>No tokens above 150% yet</div><div class="empty-sub">Scanning pump.fun — tokens will appear as they spike</div></div></td></tr>`;
+        return;
       }
 
-      function getSpikePct(token) {
-        if (token.initialMcap <= 0) return 0;
-        return ((token.peakMcap - token.initialMcap) / token.initialMcap) * 100;
+      // Track existing mints to detect new rows
+      const existingMints = new Set(Array.from(tbody.querySelectorAll('tr[data-mint]')).map(r => r.dataset.mint));
+
+      tbody.innerHTML = '';
+      tokenList.forEach(t => {
+        const isNew = !existingMints.has(t.mint);
+        const netPos = t.net_sol >= 0;
+        const score = calcScore(t.spike_pct, t.buy_ratio, t.wallets);
+        const sc = score >= 60 ? 'score-high' : score >= 30 ? 'score-mid' : 'score-low';
+        const buyRatioPct = Math.round(t.buy_ratio * 100);
+
+        const tr = document.createElement('tr');
+        tr.dataset.mint = t.mint;
+        if (isNew) tr.classList.add('new-row');
+
+        tr.innerHTML = `
+          <td class="td-name">${t.name}</td>
+          <td class="td-symbol">$${t.symbol}</td>
+          <td class="td-mcap">${t.mcap.toFixed(2)}</td>
+          <td class="td-spike"><span class="${spikeClass(t.spike_pct)}">${spikeEmoji(t.spike_pct)} +${t.spike_pct.toFixed(0)}%</span></td>
+          <td class="td-mcap">${t.peak_mcap.toFixed(2)}</td>
+          <td class="td-wallets">${t.wallets}</td>
+          <td>
+            <div class="ratio-bar-wrap">
+              <div class="ratio-bar"><div class="ratio-fill" style="width:${buyRatioPct}%"></div></div>
+              <span style="font-size:11px;color:${t.buy_ratio >= 0.6 ? 'var(--neon-green)' : 'var(--neon-red)'}">${buyRatioPct}%</span>
+            </div>
+          </td>
+          <td class="${netPos ? 'td-flow-pos' : 'td-flow-neg'}">${netPos ? '+' : ''}${t.net_sol.toFixed(2)}</td>
+          <td class="td-age">${formatAge(t.age_sec)}</td>
+          <td><span class="score-badge ${sc}">${score}</span></td>
+          <td class="td-link"><a href="https://pump.fun/coin/${t.mint}" target="_blank">🔗</a></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function addAlert(t) {
+      // Check if already alerted
+      if (alerts.find(a => a.mint === t.mint)) return;
+      alerts.unshift({ mint: t.mint, symbol: t.symbol, spike: t.spike_pct, mcap: t.mcap, time: new Date() });
+      if (alerts.length > 50) alerts.pop();
+      renderAlerts();
+    }
+
+    function renderAlerts() {
+      if (!alerts.length) {
+        alertList.innerHTML = '<div class="no-alerts">No spike alerts yet — waiting for 150%+ moves...</div>';
+        alertCount.textContent = '0 alerts';
+        return;
       }
+      alertCount.textContent = alerts.length + ' alerts';
+      alertList.innerHTML = '';
+      alerts.forEach(a => {
+        const div = document.createElement('div');
+        div.className = 'alert-item';
+        div.innerHTML = `
+          <span class="alert-time">${a.time.toLocaleTimeString()}</span>
+          <span style="font-size:14px;">${spikeEmoji(a.spike)}</span>
+          <span class="alert-symbol">$${a.symbol}</span>
+          <span class="alert-spike">+${a.spike.toFixed(0)}%</span>
+          <span class="alert-mcap">${a.mcap.toFixed(2)} SOL</span>
+          <a href="https://pump.fun/coin/${a.mint}" target="_blank" style="color:var(--neon-purple);text-decoration:none;margin-left:auto;">→</a>
+        `;
+        alertList.appendChild(div);
+      });
+    }
 
-      function isTracked(token) {
-        return token.currentMcap >= MCAP_MIN_SOL && token.currentMcap <= MCAP_MAX_SOL &&
-               (Date.now() - token.lastUpdate) < STALE_TIMEOUT_SEC * 1000;
+    function updateTicker(tokenList) {
+      if (!tokenList.length) return;
+      const items = tokenList.slice(0, 15).map(t =>
+        `<div class="ticker-item"><span class="t-sym">$${t.symbol}</span><span class="t-spike">+${t.spike_pct.toFixed(0)}%</span><span class="ticker-sep">◆</span></div>`
+      ).join('');
+      tickerInner.innerHTML = items + items; // duplicate for seamless scroll
+    }
+
+    function renderMM(data) {
+      if (!data || data.status === 'disabled' || !data.tokens || !data.tokens.length) {
+        mmGrid.innerHTML = '<div class="mm-disabled">Market maker not active or no tokens configured.</div>';
+        return;
       }
+      mmGrid.innerHTML = '';
+      data.tokens.forEach(pos => {
+        const card = document.createElement('div');
+        card.className = 'mm-card';
+        const pnlPos = pos.pnl >= 0;
+        card.innerHTML = `
+          <div class="mm-card-mint">${pos.mint.substring(0,8)}...${pos.mint.slice(-4)}</div>
+          <div class="mm-card-stat"><span style="color:var(--text-dim)">Inventory</span><span style="color:var(--neon-cyan)">${pos.inventory.toFixed(4)} SOL</span></div>
+          <div class="mm-card-stat"><span style="color:var(--text-dim)">PnL</span><span style="color:${pnlPos ? 'var(--neon-green)' : 'var(--neon-red)'}">${pnlPos ? '+' : ''}${pos.pnl.toFixed(4)} SOL</span></div>
+        `;
+        mmGrid.appendChild(card);
+      });
+    }
 
-      function logAlert(msg) {
-        const li = document.createElement('li');
-        li.innerHTML = msg;
-        logList.prepend(li);
-        if (logList.children.length > 50) logList.lastChild.remove();
+    // Fetch data from backend
+    async function fetchTokens() {
+      try {
+        const resp = await fetch('/api/tokens');
+        if (!resp.ok) throw new Error('api error');
+        const data = await resp.json();
+        setLive(true);
+        lastUpdateEl.textContent = new Date().toLocaleTimeString();
+
+        // Sort by spike desc
+        data.sort((a, b) => b.spike_pct - a.spike_pct);
+        renderTable(data);
+        updateTicker(data);
+
+        // New spike alerts
+        data.forEach(t => addAlert(t));
+
+        return data;
+      } catch(e) {
+        setLive(false);
+        return null;
       }
+    }
 
-      function updateUI() {
-        const spikedList = [];
-        for (const mint in tokens) {
-          const t = tokens[mint];
-          if (!isTracked(t)) continue;
-          const spike = getSpikePct(t);
-          if (spike >= SPIKE_THRESHOLD) {
-            spikedList.push(t);
-          }
-        }
+    async function fetchStats() {
+      try {
+        const resp = await fetch('/api/stats');
+        const data = await resp.json();
+        statTracked.textContent = data.tracked ?? '—';
+        statActive.textContent = data.active ?? '—';
+        statSpiked.textContent = data.spiked ?? '—';
+      } catch(e) {}
+    }
 
-        spikedList.sort((a, b) => getSpikePct(b) - getSpikePct(a));
-        tableBody.innerHTML = '';
-        if (spikedList.length === 0) {
-          tableBody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:#555;">No tokens above 150% yet.</td></tr>';
-        } else {
-          for (const token of spikedList) {
-            const spike = getSpikePct(token);
-            const buyTotal = token.buyCount + token.sellCount;
-            const buyRatio = buyTotal > 0 ? (token.buyCount / buyTotal).toFixed(2) : '0.00';
-            const netFlow = token.totalBuySol - token.totalSellSol;
-            const ageMinutes = ((Date.now() - token.firstSeen) / 60000).toFixed(1);
-            const spikeClass = spike >= 300 ? 'huge' : '';
-            const row = document.createElement('tr');
-            row.innerHTML = `
-              <td>${token.name}</td>
-              <td style="color:#ff0;">$${token.symbol}</td>
-              <td class="mcap">${token.currentMcap.toFixed(2)}</td>
-              <td class="spike-value ${spikeClass}">+${spike.toFixed(0)}%</td>
-              <td class="mcap">${token.peakMcap.toFixed(2)}</td>
-              <td class="wallet">${token.wallets.size}</td>
-              <td class="buy-ratio">${buyRatio}</td>
-              <td class="net-flow" style="color:${netFlow >= 0 ? '#0f0' : '#f00'};">${netFlow >= 0 ? '+' : ''}${netFlow.toFixed(2)}</td>
-              <td class="age">${ageMinutes}m</td>
-              <td><a class="link" href="https://pump.fun/coin/${token.mint}" target="_blank">🔗</a></td>`;
-            tableBody.appendChild(row);
-          }
-        }
+    async function fetchMM() {
+      try {
+        const resp = await fetch('/api/mm_status');
+        const data = await resp.json();
+        renderMM(data);
+      } catch(e) {}
+    }
 
-        const activeTokens = Object.values(tokens).filter(t => isTracked(t)).length;
-        const spikedNow = spikedList.length;
-        activeCount.textContent = activeTokens;
-        spikedCount.textContent = spikedNow;
-      }
+    // Countdown display
+    setInterval(() => {
+      refreshCountdown--;
+      if (refreshCountdown <= 0) refreshCountdown = 3;
+      statRefresh.textContent = refreshCountdown + 's';
+    }, 1000);
 
-      // Fallback API polling
-      async function pollApi() {
-        try {
-          const resp = await fetch('/api/tokens');
-          const data = await resp.json();
-          if (!data.length) return;
-          // Merge API data into local token store (simplified)
-          data.forEach(t => {
-            const mint = t.mint;
-            if (!tokens[mint]) {
-              tokens[mint] = tokenState(mint, t.name, t.symbol);
-              tokens[mint].initialMcap = t.mcap;
-              tokens[mint].peakMcap = t.peak_mcap;
-              tokens[mint].currentMcap = t.mcap;
-              tokens[mint].buyCount = t.buy_ratio * 100; // approximation
-              tokens[mint].sellCount = 100 - tokens[mint].buyCount;
-              tokens[mint].lastUpdate = Date.now();
-            }
-          });
-          updateUI();
-        } catch(e) {}
-      }
+    // Poll loop
+    async function poll() {
+      await fetchTokens();
+      await fetchStats();
+    }
 
-      // MM status polling
-      setInterval(async () => {
-        try {
-          const resp = await fetch('/api/mm_status');
-          const data = await resp.json();
-          mmStatus.textContent = JSON.stringify(data, null, 2);
-        } catch(e) {}
-      }, 5000);
+    async function pollMM() {
+      await fetchMM();
+    }
 
-      // Connect WebSocket
-      function connect() {
-        if (ws) ws.close();
-        ws = new WebSocket(WS_URL);
+    // Initial load
+    poll();
+    pollMM();
 
-        ws.onopen = () => {
-          statusDot.className = 'status connected';
-          statusText.textContent = 'Connected';
-          ws.send(JSON.stringify({ method: 'subscribeNewToken' }));
-        };
+    // Intervals
+    setInterval(poll, 3000);
+    setInterval(pollMM, 10000);
 
-        ws.onmessage = (event) => {
-          const msg = JSON.parse(event.data);
-          const type = msg.type;
-
-          if (type === 'new_token') {
-            const mint = msg.mint;
-            if (!tokens[mint]) {
-              tokens[mint] = tokenState(mint, msg.name, msg.symbol);
-              tokens[mint].initialMcap = parseFloat(msg.marketCapSol) || 0;
-              tokens[mint].peakMcap = tokens[mint].initialMcap;
-              tokens[mint].currentMcap = tokens[mint].initialMcap;
-              ws.send(JSON.stringify({
-                method: 'subscribeTokenTrade',
-                keys: [mint]
-              }));
-            }
-          } else if (type === 'token_trade' || type === 'trade') {
-            const mint = msg.mint;
-            if (!tokens[mint]) {
-              tokens[mint] = tokenState(mint, msg.name, msg.symbol);
-              tokens[mint].initialMcap = parseFloat(msg.marketCapSol) || 0;
-              tokens[mint].peakMcap = tokens[mint].initialMcap;
-              tokens[mint].currentMcap = tokens[mint].initialMcap;
-            }
-            const token = tokens[mint];
-            token.lastUpdate = Date.now();
-
-            const solAmount = parseFloat(msg.solAmount) || 0;
-            const isBuy = msg.isBuy !== false;
-            const trader = msg.traderPublicKey || '';
-            const mcap = parseFloat(msg.marketCapSol) || token.currentMcap;
-
-            token.currentMcap = mcap;
-            if (mcap > token.peakMcap) token.peakMcap = mcap;
-            if (trader) token.wallets.add(trader);
-            if (isBuy) {
-              token.buyCount++;
-              token.totalBuySol += solAmount;
-            } else {
-              token.sellCount++;
-              token.totalSellSol += solAmount;
-            }
-
-            const spike = getSpikePct(token);
-            if (!token.alerted && spike >= SPIKE_THRESHOLD) {
-              token.alerted = true;
-              alertSound.play().catch(() => {});
-              logAlert(`<span style="color:#888;">${new Date().toLocaleTimeString()}</span> 🚀 <b style="color:#ff0;">${token.symbol}</b> +${spike.toFixed(0)}% — MCap ${mcap.toFixed(2)} SOL`);
-            }
-          }
-        };
-
-        ws.onclose = () => {
-          statusDot.className = 'status disconnected';
-          statusText.textContent = 'Disconnected – retrying...';
-          clearTimeout(reconnectTimer);
-          reconnectTimer = setTimeout(connect, 5000);
-        };
-
-        ws.onerror = () => {};
-      }
-
-      // Start
-      connect();
-      setInterval(updateUI, 2000);
-      setInterval(pollApi, 5000); // fallback
-
-      // Cleanup stale tokens
-      setInterval(() => {
-        const now = Date.now();
-        for (const mint in tokens) {
-          if ((now - tokens[mint].lastUpdate) > STALE_TIMEOUT_SEC * 1000 * 2) {
-            delete tokens[mint];
-          }
-        }
-      }, 10000);
-    })();
+  })();
   </script>
+
 </body>
 </html>

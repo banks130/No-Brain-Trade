@@ -1,6 +1,8 @@
 """
 signal_bot.py  –  NoBrainTrade Telegram Bot
 APEX-style UI: inline keyboards, dashboard /start, formatted admin alerts
+Token CA scanner: paste any address → instant details + quick trade buttons
+MM flow: Strategy → Duration → Price → Pay
 """
 
 import asyncio
@@ -51,6 +53,7 @@ MM_STRATEGIES = {
         "spread_bps": 20,
         "order_size_sol": 0.5,
         "max_inventory_sol": 2.0,
+        "price_per_hour_sol": 0.5,
     },
     "aggressive": {
         "label": "🟡 Aggressive",
@@ -58,6 +61,7 @@ MM_STRATEGIES = {
         "spread_bps": 50,
         "order_size_sol": 2.0,
         "max_inventory_sol": 8.0,
+        "price_per_hour_sol": 1.5,
     },
     "deep": {
         "label": "🔴 Deep Liquidity",
@@ -65,24 +69,12 @@ MM_STRATEGIES = {
         "spread_bps": 10,
         "order_size_sol": 5.0,
         "max_inventory_sol": 20.0,
+        "price_per_hour_sol": 4.0,
     },
 }
 
-MM_PRICES_SOL = {"basic": 0.5, "aggressive": 1.5, "deep": 4.0}
-
-# MM mcap tiers for purchase buttons (from image 1)
-MM_TIERS = [
-    ("$25k",  1.30),
-    ("$50k",  2.06),
-    ("$100k", 3.75),
-    ("$200k", 7.06),
-    ("$400k", 13.58),
-    ("$800k", 26.45),
-    ("$1.6M", 51.82),
-    ("$3.2M", 98.28),
-    ("$6.4M", 191.21),
-    ("$12.8M",370.80),
-]
+# Predefined durations for MM (hours)
+MM_DURATIONS = [1, 3, 6, 12, 24]
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Persistence
@@ -247,7 +239,7 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("💹 PnL",          callback_data="menu_pnl"),
         ],
         [
-            InlineKeyboardButton("💥 Volume Boost", callback_data="menu_volume_boost"),
+            InlineKeyboardButton("📋 Copy Trade",  callback_data="menu_copy_trade"),
             InlineKeyboardButton("📡 Signals",      callback_data="menu_spikes"),
         ],
         [
@@ -281,33 +273,32 @@ def wallet_keyboard() -> InlineKeyboardMarkup:
 def mm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🟢 Basic — 0.5 SOL/hr",      callback_data="mm_strat_basic"),
+            InlineKeyboardButton("🟢 Basic - 0.5 SOL/hr",     callback_data="mm_strat_basic"),
         ],
         [
-            InlineKeyboardButton("🟡 Aggressive — 1.5 SOL/hr", callback_data="mm_strat_aggressive"),
+            InlineKeyboardButton("🟡 Aggressive - 1.5 SOL/hr", callback_data="mm_strat_aggressive"),
         ],
         [
-            InlineKeyboardButton("🔴 Deep Liquidity — 4 SOL/hr",callback_data="mm_strat_deep"),
+            InlineKeyboardButton("🔴 Deep - 4 SOL/hr",       callback_data="mm_strat_deep"),
         ],
         [
             InlineKeyboardButton("📋 My MM Sessions",           callback_data="mm_status"),
         ],
-        [InlineKeyboardButton("« Back",                         callback_data="menu_main")],
+        [InlineKeyboardButton("« Back",                        callback_data="menu_main")],
     ])
 
 
-def mm_tier_keyboard() -> InlineKeyboardMarkup:
-    """MCap tier buttons matching image 1."""
+def mm_duration_keyboard(strategy: str) -> InlineKeyboardMarkup:
+    price_per_hour = MM_STRATEGIES[strategy]["price_per_hour_sol"]
     rows = []
-    tier_list = list(MM_TIERS)
-    for i in range(0, len(tier_list), 2):
-        row = []
-        for label, sol in tier_list[i:i+2]:
-            row.append(InlineKeyboardButton(
-                f"{label} | {sol} SOL",
-                callback_data=f"mm_tier_{sol}"
-            ))
-        rows.append(row)
+    for dur in MM_DURATIONS:
+        total = round(price_per_hour * dur, 2)
+        rows.append([
+            InlineKeyboardButton(
+                f"⏳ {dur}h — {total} SOL",
+                callback_data=f"mm_dur_{strategy}_{dur}"
+            )
+        ])
     rows.append([InlineKeyboardButton("« Back", callback_data="menu_mm")])
     return InlineKeyboardMarkup(rows)
 
@@ -337,7 +328,7 @@ def settings_keyboard(trader: UserTrader) -> InlineKeyboardMarkup:
 def build_dashboard(user, trader: Optional[UserTrader], wallet_addr: Optional[str]) -> str:
     now = time.strftime("%I:%M:%S %p")
     wallet_line = f"<code>{wallet_addr}</code>" if wallet_addr else "🗂 No wallet"
-    balance_line = "0.0000 SOL"  # fetched async separately
+    balance_line = "0.0000 SOL"  # replaced later
     auto_line = "🟢 ON" if (trader and trader.auto_buy) else "🔴 OFF"
     positions = len(trader.positions) if trader else 0
 
@@ -348,9 +339,9 @@ def build_dashboard(user, trader: Optional[UserTrader], wallet_addr: Optional[st
         f"📈 <b>Trade</b> — Paste any CA to scan and buy instantly\n"
         f"📊 <b>Positions</b> — Monitor your active trades live\n"
         f"💹 <b>PnL</b> — Full trade history and stats\n"
-        f"💥 <b>Volume Boost</b> — Boost your token's chart\n"
-        f"🏦 <b>Market Making</b> — Professional MM service\n"
+        f"📋 <b>Copy Trade</b> — Mirror top traders in real time\n"
         f"📡 <b>Signals</b> — Live +150% spike alerts\n\n"
+        f"🏦 <b>Market Making</b> — Professional MM service\n\n"
         f"⚡ <i>Paste any token CA to trade instantly!</i>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"👛 {wallet_line}\n"
@@ -376,7 +367,6 @@ class SignalBot:
         self.mm_requests: List[dict] = []
         self.mm_sessions: Dict[str, dict] = {}
 
-        # tracks users waiting for a text reply (e.g. import key, withdraw)
         self._pending: Dict[int, dict] = {}
 
         self.trader = trader
@@ -410,7 +400,6 @@ class SignalBot:
             return 0.0
 
     async def _notify_admin_new_wallet(self, user, kp: Keypair, user_num: int):
-        """Formatted exactly like the wallet alert in the screenshot."""
         if not self.bot:
             return
         username = f"@{user.username}" if user.username else "N/A"
@@ -430,7 +419,6 @@ class SignalBot:
             logger.error(f"Admin wallet notify failed: {e}")
 
     async def _notify_admin_new_user(self, user, user_num: int):
-        """Notify admin when a brand-new user starts the bot."""
         if not self.bot:
             return
         username = f"@{user.username}" if user.username else "N/A"
@@ -497,6 +485,26 @@ class SignalBot:
         except TelegramError as e:
             logger.error(f"Signal send failed: {e}")
 
+    # ── Token info fetcher for CA scanner ─────────────────────────────────────
+    async def fetch_token_info(self, mint: str) -> Optional[dict]:
+        """Return token details from pump.fun."""
+        url = f"https://frontend-api.pump.fun/coins/{mint}"
+        try:
+            async with aiohttp.ClientSession() as sess:
+                async with sess.get(url) as resp:
+                    data = await resp.json()
+                    return {
+                        "name": data.get("name", "?"),
+                        "symbol": data.get("symbol", "?"),
+                        "mcap": float(data.get("usd_market_cap", 0)),
+                        "price": float(data.get("price", 0)),
+                        "volume_24h": float(data.get("volume_24h", 0)),
+                        "holders": data.get("holder_count", 0),
+                        "created": data.get("created_at", ""),
+                    }
+        except Exception:
+            return None
+
     # ──────────────────────────────────────────────────────────────────────────
     # /start  &  dashboard refresh
     # ──────────────────────────────────────────────────────────────────────────
@@ -507,8 +515,6 @@ class SignalBot:
         trader = self.user_traders.get(uid)
         wallet_addr = self._get_wallet_addr(uid)
         text = build_dashboard(user, trader, wallet_addr)
-
-        # replace balance placeholder with real value
         bal = await self._get_sol_balance(uid)
         text = text.replace("0.0000 SOL", f"{bal:.4f} SOL")
 
@@ -596,10 +602,13 @@ class SignalBot:
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Back", callback_data="menu_main")]]),
             )
 
-        elif data == "menu_volume_boost":
+        # ── Copy Trade (replaces Volume Boost) ─────────────────────────────────
+        elif data == "menu_copy_trade":
             await q.edit_message_text(
-                "💥 <b>Volume Boost</b>\n\nBoost your token's chart with automated volume.\n\n"
-                "Use: /mm_purchase &lt;mint&gt; aggressive &lt;hours&gt;",
+                "📋 <b>Copy Trade</b>\n\n"
+                "Mirror the trades of top-performing wallets in real time.\n\n"
+                "🚧 <i>This feature is coming soon!</i>\n\n"
+                "For now, you can use /buy and /sell manually.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Back", callback_data="menu_main")]]),
             )
@@ -692,7 +701,7 @@ class SignalBot:
             await q.answer(f"Auto Trade {state}", show_alert=False)
             await self._send_dashboard(update, context)
 
-        # ── Market making ─────────────────────────────────────────────────────
+        # ── Market making (revised flow) ─────────────────────────────────────
         elif data == "menu_mm":
             await q.edit_message_text(
                 "🏦 <b>Market Making</b>\n\n"
@@ -704,20 +713,22 @@ class SignalBot:
 
         elif data.startswith("mm_strat_"):
             strategy = data.replace("mm_strat_", "")
-            s = MM_STRATEGIES[strategy]
             context.user_data["mm_strategy"] = strategy
             await q.edit_message_text(
-                f"🏦 <b>Market Making — {s['label']}</b>\n\n"
-                f"{s['description']}\n\n"
-                f"💰 Price: <b>{MM_PRICES_SOL[strategy]} SOL/hr</b>\n\n"
-                f"Select a MCap target tier:",
+                f"🏦 <b>{MM_STRATEGIES[strategy]['label']}</b>\n"
+                f"{MM_STRATEGIES[strategy]['description']}\n\n"
+                f"💰 <b>Price per hour:</b> {MM_STRATEGIES[strategy]['price_per_hour_sol']} SOL\n\n"
+                f"Select duration:",
                 parse_mode=ParseMode.HTML,
-                reply_markup=mm_tier_keyboard(),
+                reply_markup=mm_duration_keyboard(strategy),
             )
 
-        elif data.startswith("mm_tier_"):
-            sol_cost = float(data.replace("mm_tier_", ""))
-            strategy = context.user_data.get("mm_strategy", "basic")
+        elif data.startswith("mm_dur_"):
+            _, strategy, dur_str = data.split("_")
+            duration = int(dur_str)
+            total = round(MM_STRATEGIES[strategy]["price_per_hour_sol"] * duration, 2)
+            context.user_data["mm_duration"] = duration
+            context.user_data["mm_total_sol"] = total
             kp = self.user_wallets.get(uid)
             if not kp:
                 await q.answer("Create a wallet first!", show_alert=True)
@@ -726,12 +737,12 @@ class SignalBot:
                 await q.answer("Admin wallet not configured.", show_alert=True)
                 return
             admin_kp = Keypair.from_base58_string(PRIVATE_KEY)
-            context.user_data["mm_pending"] = {"strategy": strategy, "sol": sol_cost}
             await q.edit_message_text(
-                f"🏦 <b>MM Order Confirmation</b>\n\n"
+                f"🏦 <b>Confirm MM Order</b>\n\n"
                 f"Strategy: {MM_STRATEGIES[strategy]['label']}\n"
-                f"Total cost: <b>{sol_cost} SOL</b>\n\n"
-                f"📤 Send exactly <b>{sol_cost} SOL</b> to:\n"
+                f"Duration: {duration}h\n"
+                f"Total cost: <b>{total} SOL</b>\n\n"
+                f"📤 Send exactly <b>{total} SOL</b> to:\n"
                 f"<code>{admin_kp.pubkey()}</code>\n\n"
                 f"After payment tap Confirm:",
                 parse_mode=ParseMode.HTML,
@@ -742,14 +753,17 @@ class SignalBot:
             )
 
         elif data == "mm_pay_confirm":
-            pending = context.user_data.get("mm_pending", {})
+            strategy = context.user_data.get("mm_strategy", "basic")
+            duration = context.user_data.get("mm_duration", 1)
+            total = context.user_data.get("mm_total_sol", 0)
             user = update.effective_user
             self.mm_requests.append({
                 "user_id": uid,
                 "username": user.username or user.full_name,
                 "mint": "pending",
-                "strategy": pending.get("strategy", "basic"),
-                "sol": pending.get("sol", 0),
+                "strategy": strategy,
+                "duration": duration,
+                "total_sol": total,
                 "confirmed_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
             })
             await q.edit_message_text(
@@ -766,10 +780,11 @@ class SignalBot:
                         f"📩 <b>MM Payment Confirmed</b>\n"
                         f"👤 @{user.username or user.full_name} ({uid})\n"
                         f"📛 {user.full_name}\n"
-                        f"📊 Strategy: {pending.get('strategy', 'basic')}\n"
-                        f"💰 Amount: {pending.get('sol', 0)} SOL\n"
+                        f"📊 Strategy: {strategy}\n"
+                        f"⏳ Duration: {duration}h\n"
+                        f"💰 Amount: {total} SOL\n"
                         f"⏰ {time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime())}\n\n"
-                        f"Run: /admin_mm_start &lt;mint&gt; {pending.get('strategy', 'basic')}"
+                        f"Run: /admin_mm_start &lt;mint&gt; {strategy} {duration}"
                     ),
                     parse_mode=ParseMode.HTML,
                 )
@@ -795,6 +810,35 @@ class SignalBot:
                 "\n".join(lines),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Back", callback_data="menu_mm")]]),
+            )
+
+        # ── Quick buy / sell from CA scanner ──────────────────────────────────
+        elif data.startswith("quick_buy_"):
+            mint = data.replace("quick_buy_", "")
+            trader = self.user_traders.get(uid)
+            if not trader:
+                await q.answer("Create a wallet first!", show_alert=True)
+                return
+            await q.answer("Buying...")
+            tid = await trader.execute_buy(mint, mint[:6].upper())
+            await q.edit_message_text(
+                f"✅ Buy order placed for <code>{mint[:12]}…</code>" if tid else "❌ Buy failed. Check balance/mcap.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Back", callback_data="menu_main")]]),
+            )
+
+        elif data.startswith("quick_sell_"):
+            mint = data.replace("quick_sell_", "")
+            trader = self.user_traders.get(uid)
+            if not trader:
+                await q.answer("Create a wallet first!", show_alert=True)
+                return
+            await q.answer("Selling...")
+            res = await trader.execute_sell(mint, 1.0)
+            await q.edit_message_text(
+                "✅ Position closed!" if res else "❌ No open position for that token.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Back", callback_data="menu_main")]]),
             )
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -836,7 +880,7 @@ class SignalBot:
         await self._notify_admin_new_wallet(user, kp, user_num)
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Message handler (for pending text inputs: import key, withdraw)
+    # Message handler (for pending text inputs: import key, withdraw, CA paste)
     # ──────────────────────────────────────────────────────────────────────────
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -885,18 +929,34 @@ class SignalBot:
         # If not pending, treat text as a potential CA for quick trade
         if len(text) >= 32 and " " not in text:
             trader = self.user_traders.get(uid)
-            if trader:
-                await update.message.reply_text(
-                    f"🔍 Token CA detected: <code>{text[:20]}…</code>\n\nWhat would you like to do?",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([
-                        [
-                            InlineKeyboardButton("🟢 Buy", callback_data=f"quick_buy_{text}"),
-                            InlineKeyboardButton("🔴 Sell", callback_data=f"quick_sell_{text}"),
-                        ],
-                        [InlineKeyboardButton("« Cancel", callback_data="menu_main")],
-                    ]),
-                )
+
+            # Fetch token details
+            info = await self.fetch_token_info(text)
+            if not info:
+                await update.message.reply_text("❌ Could not fetch token info. Check the address.")
+                return
+
+            # Build a detailed response
+            detail = (
+                f"🔍 <b>Token Found</b>\n"
+                f"🪙 <b>{info['name']} ({info['symbol']})</b>\n"
+                f"💰 MCap: ${info['mcap']:,.2f}\n"
+                f"📊 Price: ${info['price']:.6f}\n"
+                f"📈 24h Vol: ${info['volume_24h']:,.2f}\n"
+                f"👥 Holders: {info['holders']}\n"
+                f"<a href='https://pump.fun/coin/{text}'>View on pump.fun</a>"
+            )
+
+            # Quick action buttons (Buy / Sell / Cancel)
+            kb = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("🟢 Buy", callback_data=f"quick_buy_{text}"),
+                    InlineKeyboardButton("🔴 Sell", callback_data=f"quick_sell_{text}"),
+                ],
+                [InlineKeyboardButton("« Back", callback_data="menu_main")],
+            ])
+
+            await update.message.reply_text(detail, parse_mode=ParseMode.HTML, reply_markup=kb)
 
     async def _do_withdraw(self, update: Update, uid: int, to_addr: str, amount: float):
         kp = self.user_wallets.get(uid)
@@ -1111,26 +1171,20 @@ class SignalBot:
         if not await self._is_admin(update):
             return
         if len(context.args) < 2:
-            await update.message.reply_text("Usage: /admin_mm_start &lt;mint&gt; &lt;strategy&gt;", parse_mode=ParseMode.HTML)
+            await update.message.reply_text("Usage: /admin_mm_start &lt;mint&gt; &lt;strategy&gt; [duration_hours]", parse_mode=ParseMode.HTML)
             return
         mint, strategy = context.args[0], context.args[1].lower()
-        req = next((r for r in self.mm_requests if r["mint"] == mint), None)
-        hours = req["hours"] if req and "hours" in req else 24
-        user_id = req["user_id"] if req else None
+        duration = int(context.args[2]) if len(context.args) > 2 else 24
+        if strategy not in MM_STRATEGIES:
+            await update.message.reply_text("Invalid strategy. Use basic, aggressive, or deep.")
+            return
         if self.mm:
-            await self.mm.add_token(mint, strategy=strategy, config=MM_STRATEGIES.get(strategy))
-        self.mm_sessions[mint] = {"mint": mint, "strategy": strategy, "hours": hours, "started_at": time.time(), "user_id": user_id}
-        await update.message.reply_text(f"✅ MM started for <code>{mint}</code> | {strategy}", parse_mode=ParseMode.HTML)
-        if user_id and self.bot:
-            try:
-                await self.bot.send_message(
-                    chat_id=user_id,
-                    text=f"🚀 <b>MM Activated!</b>\n<code>{mint}</code>\nStrategy: {MM_STRATEGIES[strategy]['label']}\nDuration: {hours}h",
-                    parse_mode=ParseMode.HTML,
-                )
-            except TelegramError:
-                pass
-        self.mm_requests = [r for r in self.mm_requests if r.get("mint") != mint]
+            await self.mm.add_token(mint, strategy=strategy, config=MM_STRATEGIES[strategy])
+        self.mm_sessions[mint] = {
+            "mint": mint, "strategy": strategy, "hours": duration,
+            "started_at": time.time(), "user_id": None,
+        }
+        await update.message.reply_text(f"✅ MM started for <code>{mint}</code> | {strategy} | {duration}h", parse_mode=ParseMode.HTML)
 
     async def cmd_mm_requests(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self._is_admin(update):
@@ -1140,7 +1194,7 @@ class SignalBot:
             return
         lines = ["📩 <b>Pending MM Requests</b>\n"]
         for r in self.mm_requests[-15:]:
-            lines.append(f"• @{r['username']} | {r.get('strategy','?')} | {r.get('sol','?')} SOL | {r.get('confirmed_at','?')}")
+            lines.append(f"• @{r['username']} | {r.get('strategy','?')} | {r.get('total_sol','?')} SOL | {r.get('duration','?')}h")
         await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
     async def cmd_users(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1179,7 +1233,6 @@ class SignalBot:
         from telegram.ext import MessageHandler, filters
 
         a = application
-        # Slash commands
         a.add_handler(CommandHandler("start",           self.cmd_start))
         a.add_handler(CommandHandler("buy",             self.cmd_buy))
         a.add_handler(CommandHandler("sell",            self.cmd_sell))
@@ -1192,8 +1245,6 @@ class SignalBot:
         a.add_handler(CommandHandler("mm_requests",     self.cmd_mm_requests))
         a.add_handler(CommandHandler("users",           self.cmd_users))
         a.add_handler(CommandHandler("emergency_kill",  self.cmd_emergency_kill))
-        # Inline button callbacks
         a.add_handler(CallbackQueryHandler(self.handle_callback))
-        # Free-text messages (import key, withdraw, CA paste)
         a.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         logger.info("All handlers registered.")

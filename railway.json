@@ -11,6 +11,7 @@
     "restartPolicyType": "ALWAYS",
     "numReplicas": 1,
     "healthcheckMethod": "GET",
-    "healthcheckProtocol": "HTTP"
+    "healthcheckProtocol": "HTTP",
+    "port": 8080
   }
 }

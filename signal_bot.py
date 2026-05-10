@@ -1,114 +1,256 @@
 import asyncio
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode
-from telegram.error import TelegramError
-from telegram.ext import Application, CommandHandler, ContextTypes, CallbackContext
-import logging
-from config import (TELEGRAM_BOT_TOKEN, TELEGRAM_SIGNAL_CHANNEL,
-                    TELEGRAM_ADMIN_ID, DRY_RUN)
+import time
+from typing import Dict, Optional
+import aiohttp
+from dataclasses import dataclass, field
+from solders.keypair import Keypair
+from config import (PRIVATE_KEY, AUTO_BUY_AMOUNT_SOL, MAX_POSITION_SIZE_SOL,
+                    MAX_CONCURRENT_POSITIONS, SLIPPAGE_BPS, STOP_LOSS_PCT,
+                    TAKE_PROFIT_LEVELS, DRY_RUN, MCAP_MAX_SOL)
 from utils import logger
 
-class SignalBot:
-    def __init__(self, trader=None, mm=None):
-        self.bot = Bot(token=TELEGRAM_BOT_TOKEN)
-        self.trader = trader
-        self.mm = mm
-        self.auto_buy_enabled = True
 
-    async def send_spike(self, token):
-        """Send spike alert to channel."""
-        text = (
-            f"🧠 <b>Spike Alert ≥150%</b>\n\n"
-            f"🪙 <b>{token.symbol} ({token.name})</b>\n"
-            f"📈 Spike: <b>+{token.spike_pct:.0f}%</b>\n"
-            f"💰 MCap: {token.current_mcap:.2f} SOL\n"
-            f"👥 Wallets: {token.unique_wallet_count}\n"
-            f"<a href='https://pump.fun/coin/{token.mint}'>View on pump.fun</a>"
-        )
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🟢 Buy Now", url=f"https://pump.fun/coin/{token.mint}")],
-        ])
-        await self._send_to_channel(text, reply_markup=keyboard)
+@dataclass
+class Position:
+    token_mint: str
+    symbol: str
+    entry_price_sol: float
+    amount_sol: float
+    current_price_sol: float = 0.0
+    highest_price_sol: float = 0.0
+    buy_time: float = field(default_factory=time.time)
+    tp_levels: list = field(default_factory=list)
+    realized_pnl: float = 0.0
+    id: str = field(default_factory=lambda: hex(int(time.time() * 1000))[2:])
 
-    async def send_strong_signal(self, token):
-        """Send strong buy signal (No Brain Score ≥85)."""
-        text = (
-            f"🧠 <b>BUY SIGNAL (Score ≥85)</b>\n\n"
-            f"🪙 <b>{token.symbol} ({token.name})</b>\n"
-            f"📈 Spike: +{token.spike_pct:.0f}%\n"
-            f"💰 MCap: {token.current_mcap:.2f} SOL\n"
-            f"📊 Buy Ratio: {token.buy_ratio:.2f}\n"
-            f"<a href='https://pump.fun/coin/{token.mint}'>Open</a>"
-        )
-        await self._send_to_channel(text)
+    def pnl_sol(self) -> float:
+        if self.entry_price_sol <= 0:
+            return 0.0
+        ratio = self.current_price_sol / self.entry_price_sol
+        return (ratio - 1) * self.amount_sol
 
-    async def send_admin_log(self, message: str):
-        """Send trade/status log to admin DM."""
+    def pnl_pct(self) -> float:
+        if self.entry_price_sol <= 0:
+            return 0.0
+        return (self.current_price_sol - self.entry_price_sol) / self.entry_price_sol * 100
+
+
+class TradeBot:
+    def __init__(self, signal_bot=None):
+        self.keypair = Keypair.from_base58_string(PRIVATE_KEY) if PRIVATE_KEY and not DRY_RUN else None
+        self.positions: Dict[str, Position] = {}
+        self.session = aiohttp.ClientSession()
+        self.signal_bot = signal_bot
+        self.auto_buy = True
+        self._total_realized_pnl = 0.0
+
+    def set_signal_bot(self, signal_bot):
+        self.signal_bot = signal_bot
+
+    async def get_token_price(self, mint: str) -> Optional[float]:
         try:
-            await self.bot.send_message(chat_id=TELEGRAM_ADMIN_ID, text=message, parse_mode=ParseMode.HTML)
-        except TelegramError as e:
-            logger.error(f"Failed to send admin log: {e}")
+            async with self.session.get(
+                f"https://frontend-api.pump.fun/coins/{mint}",
+                timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                data = await resp.json()
+                return float(data.get("market_cap", 0))
+        except Exception as e:
+            logger.warning(f"Price fetch failed for {mint}: {e}")
+            return None
 
-    async def _send_to_channel(self, text, reply_markup=None):
+    async def execute_buy(self, mint: str, symbol: str) -> Optional[str]:
+        if len(self.positions) >= MAX_CONCURRENT_POSITIONS:
+            logger.info(f"Max positions reached, skipping {symbol}")
+            return None
+
+        if mint in self.positions:
+            logger.info(f"Already in position for {symbol}")
+            return None
+
+        price_sol = await self.get_token_price(mint)
+        if price_sol and price_sol > MCAP_MAX_SOL:
+            logger.info(f"MCap too high for {symbol}: {price_sol}")
+            return None
+
+        amount = min(AUTO_BUY_AMOUNT_SOL, MAX_POSITION_SIZE_SOL)
+
+        # Build TP levels from config
+        tp_levels = list(TAKE_PROFIT_LEVELS) if TAKE_PROFIT_LEVELS else []
+
+        if DRY_RUN:
+            logger.info(f"DRY RUN: Would buy {amount} SOL of {symbol} ({mint})")
+            pos = Position(
+                token_mint=mint,
+                symbol=symbol,
+                entry_price_sol=price_sol or 0,
+                amount_sol=amount,
+                current_price_sol=price_sol or 0,
+                highest_price_sol=price_sol or 0,
+                tp_levels=tp_levels,
+            )
+            self.positions[mint] = pos
+            if self.signal_bot:
+                await self.signal_bot.notify_buy_executed(
+                    symbol, mint, amount, price_sol or 0, pos.id, dry=True
+                )
+            return pos.id
+
         try:
-            await self.bot.send_message(chat_id=TELEGRAM_SIGNAL_CHANNEL,
-                                        text=text, parse_mode=ParseMode.HTML,
-                                        reply_markup=reply_markup,
-                                        disable_web_page_preview=False)
-        except TelegramError as e:
-            logger.error(f"Channel message failed: {e}")
+            payload = {
+                "action": "buy",
+                "mint": mint,
+                "amount": amount,
+                "denominatedInSol": "true",
+                "slippage": SLIPPAGE_BPS,
+                "priorityFee": 0.005,
+                "privateKey": self.keypair.to_base58_string(),
+            }
+            async with self.session.post(
+                "https://pumpportal.fun/api/trade",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as resp:
+                data = await resp.json()
+                if data.get("error"):
+                    logger.error(f"Buy API error for {symbol}: {data}")
+                    if self.signal_bot:
+                        await self.signal_bot.notify_error(f"Buy {symbol}", str(data.get("error")))
+                    return None
 
-    # ── Telegram Bot Command Handlers ──────────────
-    async def start_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if str(update.effective_user.id) != TELEGRAM_ADMIN_ID:
-            return
-        await update.message.reply_text("NoBrainTrade bot active.\nCommands: /mm_start, /mm_stop, /mm_status, /emergency_kill, /toggle_auto_buy")
+            pos = Position(
+                token_mint=mint,
+                symbol=symbol,
+                entry_price_sol=price_sol or 0,
+                amount_sol=amount,
+                current_price_sol=price_sol or 0,
+                highest_price_sol=price_sol or 0,
+                tp_levels=tp_levels,
+            )
+            self.positions[mint] = pos
+            logger.info(f"✅ Bought {amount} SOL of {symbol}")
 
-    async def mm_start_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if str(update.effective_user.id) != TELEGRAM_ADMIN_ID or not self.mm:
-            return
-        token = context.args[0] if context.args else None
-        if not token:
-            await update.message.reply_text("Usage: /mm_start <mint_address>")
-            return
-        await self.mm.add_token(token)
-        await update.message.reply_text(f"Started market making on {token}")
+            if self.signal_bot:
+                await self.signal_bot.notify_buy_executed(
+                    symbol, mint, amount, price_sol or 0, pos.id, dry=False
+                )
+            return pos.id
 
-    async def mm_stop_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if str(update.effective_user.id) != TELEGRAM_ADMIN_ID or not self.mm:
-            return
-        token = context.args[0] if context.args else None
-        if not token:
-            await update.message.reply_text("Usage: /mm_stop <mint_address>")
-            return
-        await self.mm.remove_token(token)
-        await update.message.reply_text(f"Stopped market making on {token}")
+        except Exception as e:
+            logger.error(f"Buy exception for {symbol}: {e}")
+            if self.signal_bot:
+                await self.signal_bot.notify_error(f"Buy {symbol}", str(e))
+            return None
 
-    async def mm_status_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if str(update.effective_user.id) != TELEGRAM_ADMIN_ID or not self.mm:
-            return
-        status = self.mm.get_status()
-        await update.message.reply_text(status)
+    async def execute_sell(self, mint: str, fraction: float = 1.0, reason: str = "manual") -> bool:
+        if mint not in self.positions:
+            return False
 
-    async def emergency_kill_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if str(update.effective_user.id) != TELEGRAM_ADMIN_ID:
-            return
-        if self.trader:
-            await self.trader.emergency_kill()
-        if self.mm:
-            await self.mm.emergency_kill()
-        await update.message.reply_text("🔴 Emergency kill executed. All positions sold, MM stopped.")
+        pos = self.positions[mint]
+        amount = pos.amount_sol * fraction
+        pnl = pos.pnl_sol() * fraction
+        pnl_pct = pos.pnl_pct()
 
-    async def toggle_auto_buy_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if str(update.effective_user.id) != TELEGRAM_ADMIN_ID:
-            return
-        self.auto_buy_enabled = not self.auto_buy_enabled
-        await update.message.reply_text(f"Auto-buy {'ENABLED' if self.auto_buy_enabled else 'DISABLED'}.")
+        if DRY_RUN:
+            logger.info(f"DRY RUN: Would sell {amount} SOL of {pos.symbol} ({reason})")
+            pos.amount_sol -= amount
+            pos.realized_pnl += pnl
+            self._total_realized_pnl += pnl
+            if pos.amount_sol <= 0.0001:
+                del self.positions[mint]
+            if self.signal_bot:
+                await self.signal_bot.notify_sell_executed(
+                    pos.symbol, mint, amount, reason, pnl, pnl_pct, dry=True
+                )
+            return True
 
-    def register_handlers(self, application: Application):
-        application.add_handler(CommandHandler("start", self.start_cmd))
-        application.add_handler(CommandHandler("mm_start", self.mm_start_cmd))
-        application.add_handler(CommandHandler("mm_stop", self.mm_stop_cmd))
-        application.add_handler(CommandHandler("mm_status", self.mm_status_cmd))
-        application.add_handler(CommandHandler("emergency_kill", self.emergency_kill_cmd))
-        application.add_handler(CommandHandler("toggle_auto_buy", self.toggle_auto_buy_cmd))
+        try:
+            payload = {
+                "action": "sell",
+                "mint": mint,
+                "amount": amount,
+                "denominatedInSol": "true",
+                "slippage": SLIPPAGE_BPS,
+                "privateKey": self.keypair.to_base58_string(),
+            }
+            async with self.session.post(
+                "https://pumpportal.fun/api/trade",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as resp:
+                data = await resp.json()
+                if data.get("error"):
+                    logger.error(f"Sell API error for {pos.symbol}: {data}")
+                    if self.signal_bot:
+                        await self.signal_bot.notify_error(f"Sell {pos.symbol}", str(data.get("error")))
+                    return False
+
+            pos.amount_sol -= amount
+            pos.realized_pnl += pnl
+            self._total_realized_pnl += pnl
+            logger.info(f"✅ Sold {amount} SOL of {pos.symbol} ({reason})")
+
+            if self.signal_bot:
+                await self.signal_bot.notify_sell_executed(
+                    pos.symbol, mint, amount, reason, pnl, pnl_pct, dry=False
+                )
+
+            if pos.amount_sol <= 0.0001:
+                del self.positions[mint]
+            return True
+
+        except Exception as e:
+            logger.error(f"Sell exception for {pos.symbol}: {e}")
+            if self.signal_bot:
+                await self.signal_bot.notify_error(f"Sell {pos.symbol}", str(e))
+            return False
+
+    async def monitor_positions(self):
+        while True:
+            for mint, pos in list(self.positions.items()):
+                try:
+                    price = await self.get_token_price(mint)
+                    if not price:
+                        continue
+
+                    pos.current_price_sol = price
+                    if price > pos.highest_price_sol:
+                        pos.highest_price_sol = price
+
+                    # Stop loss check
+                    if pos.highest_price_sol > 0:
+                        drawdown = (pos.highest_price_sol - price) / pos.highest_price_sol * 100
+                        if drawdown >= STOP_LOSS_PCT:
+                            logger.info(f"SL triggered for {pos.symbol} ({drawdown:.1f}% drawdown)")
+                            pnl = pos.pnl_sol()
+                            if self.signal_bot:
+                                await self.signal_bot.notify_stop_loss(
+                                    pos.symbol, mint, drawdown, pnl
+                                )
+                            await self.execute_sell(mint, 1.0, reason="sl")
+                            continue
+
+                    # Take profit check
+                    for mult, frac in list(pos.tp_levels):
+                        if pos.entry_price_sol > 0 and price >= pos.entry_price_sol * mult:
+                            level_pct = (mult - 1) * 100
+                            sell_amount = pos.amount_sol * frac
+                            pnl = pos.pnl_sol() * frac
+                            logger.info(f"TP +{level_pct:.0f}% triggered for {pos.symbol}")
+                            if self.signal_bot:
+                                await self.signal_bot.notify_take_profit(
+                                    pos.symbol, mint, level_pct, frac, pnl
+                                )
+                            await self.execute_sell(mint, frac, reason="tp")
+                            pos.tp_levels.remove((mult, frac))
+                            break
+
+                except Exception as e:
+                    logger.error(f"Monitor error for {mint}: {e}")
+
+            await asyncio.sleep(5)
+
+    async def emergency_kill(self):
+        logger.warning("☠️ KILL SWITCH: Selling all positions")
+        for mint in list(self.positions.keys()):
+            await self.execute_sell(mint, 1.0, reason="kill")
